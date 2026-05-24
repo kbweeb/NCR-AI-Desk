@@ -1,0 +1,27 @@
+target/
+.tools/
+qwen-model/
+.tools/qwen-venv/
+__pycache__/
+*.pyc
+.idea/
+*.iml
+
+# Local / runtime
+.env
+.data/
+*.log
+
+# Rust build output
+ai-service/target/
+
+# Machine-local Rust linker config (do not commit absolute MSVC paths)
+.cargo/config.toml
+
+# Cursor / local tooling (not part of the app)
+.cursor/
+mcps/
+.vscode/
+
+# Ephemeral agent upgrade workspace (if recreated locally)
+.github/java-upgrade/

@@ -43,8 +43,8 @@ The browser only talks to **8080**. Spring forwards API calls to **8090**. Rust 
 ## 3. Get the code
 
 ```powershell
-git clone https://github.com/kbweeb/NCR-AIDesk.git
-cd NCR-AIDesk
+git clone https://github.com/kbweeb/NCR-AI-Desk.git
+cd NCR-AI-Desk
 ```
 
 ---

@@ -2,7 +2,7 @@
 
 Internal workplace assistant for NCR employees: **directory and policy answers**, **document upload and editing** (PDF, Word, text), and an **AI copilot** with **live web data** (weather, news, current events) via **Perplexity Sonar**. Optional **Qdrant Cloud RAG** improves semantic search over the knowledge base.
 
-**Repository:** [github.com/kbweeb/NCR-AIDesk](https://github.com/kbweeb/NCR-AIDesk)
+**Repository:** [github.com/kbweeb/NCR-AI-Desk](https://github.com/kbweeb/NCR-AI-Desk)
 
 ---
 
@@ -44,8 +44,8 @@ Browser → Spring :8080 → Rust :8090 → Python :8092 (chat / documents / emb
 ### 1. Clone and configure
 
 ```powershell
-git clone https://github.com/kbweeb/NCR-AIDesk.git
-cd NCR-AIDesk
+git clone https://github.com/kbweeb/NCR-AI-Desk.git
+cd NCR-AI-Desk
 copy .env.example .env
 # Edit .env — set PERPLEXITY_API_KEY (required for chat)
 # Optional: QDRANT_URL and QDRANT_API_KEY for directory RAG

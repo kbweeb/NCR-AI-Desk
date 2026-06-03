@@ -119,8 +119,15 @@ function Start-DeskDocs {
         python -m venv $venv
     }
     Write-Host "Installing document service dependencies..."
-    & $pip install -r $requirements
-    if ($LASTEXITCODE -ne 0) { throw "pip install failed." }
+    & $pip install -r $requirements 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Recreating Python venv and retrying pip..."
+        Remove-Item -Recurse -Force $venv -ErrorAction SilentlyContinue
+        python -m venv $venv
+        $pip = Join-Path $venv "Scripts\pip.exe"
+        & $pip install -r $requirements 2>&1 | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "pip install failed." }
+    }
     $env:DOCUMENT_BIND_HOST = "127.0.0.1"
     $env:DOCUMENT_BIND_PORT = "$QwenPort"
     Write-Host "Document service: http://127.0.0.1:$QwenPort/"

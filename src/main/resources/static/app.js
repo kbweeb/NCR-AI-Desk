@@ -31,6 +31,7 @@ let activeDocumentName = null;
 let chatSummaries = [];
 let deskOnline = false;
 let aiOnline = false;
+let documentsOnline = false;
 let healthPollTimer = null;
 let firstHealthCheck = true;
 let bootstrapping = false;
@@ -95,7 +96,7 @@ function showEmptyView() {
 
 function setComposerEnabled(enabled) {
   input.disabled = !enabled;
-  attachBtn.disabled = !enabled;
+  attachBtn.disabled = !enabled || !documentsOnline;
   updateSendButton();
 }
 
@@ -144,22 +145,29 @@ async function checkHealth(silent = false) {
       data.backend?.llm?.liveAvailable === true ||
       data.backend?.llm?.qwenAvailable === true ||
       data.backend?.llm?.ollamaAvailable === true;
+    documentsOnline =
+      data.documentsAvailable === true ||
+      data.backend?.llm?.documentServiceAvailable === true;
 
     firstHealthCheck = false;
     setComposerEnabled(deskOnline);
+    if (attachBtn) attachBtn.disabled = !deskOnline || !documentsOnline;
 
     if (!deskOnline) {
       setStatus("Offline", "warn");
       return;
     }
-    if (aiOnline) {
+    if (aiOnline && documentsOnline) {
       setStatus("Online", "ok");
+    } else if (aiOnline) {
+      setStatus("Chat only", "warn");
     } else {
       setStatus("Directory mode", "warn");
     }
   } catch {
     deskOnline = false;
     aiOnline = false;
+    documentsOnline = false;
     setComposerEnabled(false);
     if (!silent || firstHealthCheck) {
       setStatus(firstHealthCheck ? "Starting…" : "Offline", "warn");
@@ -407,6 +415,13 @@ function updateDocChip() {
 async function uploadDocument(file) {
   if (!deskOnline) {
     appendMessage("assistant", "The desk is still starting. Try again in a moment.");
+    return;
+  }
+  if (!documentsOnline) {
+    appendMessage(
+      "assistant",
+      "Document upload is offline. Run .\\start.cmd (or .\\start-docs.cmd) and wait until status shows Online."
+    );
     return;
   }
   if (!activeChatId) {

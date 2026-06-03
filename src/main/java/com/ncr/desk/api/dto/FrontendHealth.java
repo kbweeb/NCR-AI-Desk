@@ -5,4 +5,5 @@ public record FrontendHealth(
         String frontend,
         boolean backendReachable,
         boolean aiAvailable,
+        boolean documentsAvailable,
         BackendHealth backend) {}

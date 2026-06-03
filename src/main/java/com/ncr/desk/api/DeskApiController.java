@@ -45,21 +45,24 @@ public class DeskApiController {
             BackendHealth backend = aiDeskClient.health();
             boolean reachable = backend != null && "ok".equalsIgnoreCase(backend.status());
             boolean aiAvailable = false;
+            boolean documentsAvailable = false;
             if (backend != null && backend.llm() != null) {
                 var llm = backend.llm();
                 aiAvailable =
                         llm.liveAvailable()
                                 || Boolean.TRUE.equals(llm.qwenAvailable())
                                 || Boolean.TRUE.equals(llm.ollamaAvailable());
+                documentsAvailable = llm.documentServiceAvailable();
             }
             return new FrontendHealth(
                     reachable ? "ok" : "degraded",
                     "spring-boot",
                     reachable,
                     aiAvailable,
+                    documentsAvailable,
                     backend);
         } catch (RestClientException ex) {
-            return new FrontendHealth("degraded", "spring-boot", false, false, null);
+            return new FrontendHealth("degraded", "spring-boot", false, false, false, null);
         }
     }
 

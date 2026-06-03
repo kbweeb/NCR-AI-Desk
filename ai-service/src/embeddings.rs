@@ -46,10 +46,14 @@ pub async fn embed_batch(texts: &[&str]) -> Result<Vec<Vec<f32>>, String> {
 
     let res = client
         .post(embed_service_url())
-        .json(&EmbedRequest { texts: texts.to_vec() })
+        .json(&EmbedRequest {
+            texts: texts.to_vec(),
+        })
         .send()
         .await
-        .map_err(|e| format!("Embed request failed (is the document service on 8092 running?): {e}"))?;
+        .map_err(|e| {
+            format!("Embed request failed (is the document service on 8092 running?): {e}")
+        })?;
 
     if !res.status().is_success() {
         let status = res.status();

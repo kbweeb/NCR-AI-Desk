@@ -3,8 +3,6 @@
 use crate::embeddings::{self, VECTOR_SIZE};
 use crate::kb::{entries, KbEntry}; // KbEntry used in return type
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
 pub fn qdrant_url() -> Option<String> {
     std::env::var("QDRANT_URL")
@@ -38,7 +36,9 @@ fn normalize_qdrant_url(raw: &str) -> String {
 }
 
 pub fn qdrant_api_key() -> Option<String> {
-    std::env::var("QDRANT_API_KEY").ok().filter(|s| !s.is_empty())
+    std::env::var("QDRANT_API_KEY")
+        .ok()
+        .filter(|s| !s.is_empty())
 }
 
 pub fn collection_name() -> String {
@@ -49,10 +49,16 @@ pub fn is_configured() -> bool {
     qdrant_url().is_some() && qdrant_api_key().is_some()
 }
 
+/// FNV-1a 64-bit — stable across Rust versions (unlike `DefaultHasher`).
 fn point_id_for(entry_id: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    entry_id.hash(&mut hasher);
-    hasher.finish()
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET;
+    for b in entry_id.bytes() {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
 }
 
 fn entry_embed_text(entry: &KbEntry) -> String {
@@ -269,13 +275,16 @@ pub async fn sync_if_ready() {
         return;
     }
     if !embeddings::embed_service_available().await {
-        println!("  RAG: Qdrant configured but embed service offline — index after Qwen starts");
+        println!("  RAG: Qdrant configured but embed service offline — index after document service starts");
         return;
     }
     for attempt in 1..=3 {
         match index_kb().await {
             Ok(n) => {
-                println!("  RAG: indexed {n} KB entries in Qdrant ({})", collection_name());
+                println!(
+                    "  RAG: indexed {n} KB entries in Qdrant ({})",
+                    collection_name()
+                );
                 return;
             }
             Err(e) => {

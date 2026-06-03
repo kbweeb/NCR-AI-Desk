@@ -34,5 +34,6 @@ pub async fn is_available() -> bool {
     let Ok(body) = res.json::<HealthResponse>().await else {
         return false;
     };
-    body.ready.unwrap_or_else(|| body.status.as_deref() == Some("ok"))
+    body.ready
+        .unwrap_or_else(|| body.status.as_deref() == Some("ok"))
 }

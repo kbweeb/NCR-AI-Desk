@@ -52,7 +52,14 @@ pub fn classify_intent(text: &str) -> (&'static str, f32) {
         (
             "contact_lookup",
             vec![
-                "phone", "telephone", "number", "call", "email", "contact", "reach", "extension",
+                "phone",
+                "telephone",
+                "number",
+                "call",
+                "email",
+                "contact",
+                "reach",
+                "extension",
                 "dial",
             ],
             1.0,
@@ -68,8 +75,15 @@ pub fn classify_intent(text: &str) -> (&'static str, f32) {
         (
             "escalation",
             vec![
-                "complaint", "complaints", "grievance", "harassment", "ethics", "compliance",
-                "report", "concern", "anonymous",
+                "complaint",
+                "complaints",
+                "grievance",
+                "harassment",
+                "ethics",
+                "compliance",
+                "report",
+                "concern",
+                "anonymous",
             ],
             0.9,
         ),
@@ -81,7 +95,13 @@ pub fn classify_intent(text: &str) -> (&'static str, f32) {
             ],
             0.85,
         ),
-        ("it_support", vec!["password", "vpn", "computer", "laptop", "device", "login", "it"], 0.9),
+        (
+            "it_support",
+            vec![
+                "password", "vpn", "computer", "laptop", "device", "login", "it",
+            ],
+            0.9,
+        ),
     ];
 
     let mut best = ("general", 0f32);
@@ -170,9 +190,26 @@ pub fn is_assistant_request(text: &str) -> bool {
 
     if lower.contains("help me") {
         const ACTION: &[&str] = &[
-            "write", "draft", "create", "build", "make", "prepare", "think", "decide",
-            "choose", "analyze", "compare", "explain", "solve", "plan", "email", "message",
-            "letter", "report", "presentation", "slide",
+            "write",
+            "draft",
+            "create",
+            "build",
+            "make",
+            "prepare",
+            "think",
+            "decide",
+            "choose",
+            "analyze",
+            "compare",
+            "explain",
+            "solve",
+            "plan",
+            "email",
+            "message",
+            "letter",
+            "report",
+            "presentation",
+            "slide",
         ];
         return ACTION.iter().any(|a| lower.contains(a));
     }
@@ -407,17 +444,23 @@ mod tests {
 
     #[test]
     fn detects_writing_help() {
-        assert!(is_assistant_request("Help me write an email to my manager about PTO"));
+        assert!(is_assistant_request(
+            "Help me write an email to my manager about PTO"
+        ));
     }
 
     #[test]
     fn detects_figure_out() {
-        assert!(is_assistant_request("Can you help me figure out the best way to structure this report?"));
+        assert!(is_assistant_request(
+            "Can you help me figure out the best way to structure this report?"
+        ));
     }
 
     #[test]
     fn not_assistant_for_phone_lookup() {
-        assert!(!is_assistant_request("What is the Business Solutions phone number?"));
+        assert!(!is_assistant_request(
+            "What is the Business Solutions phone number?"
+        ));
     }
 
     #[test]

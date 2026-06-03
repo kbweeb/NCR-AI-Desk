@@ -522,6 +522,13 @@ async function ask(message) {
     chatHistory.push({ role: "assistant", content: data.reply });
     await persistMessage("assistant", data.reply);
 
+    if (
+      data.reply &&
+      data.reply.includes("don't have that document in this session")
+    ) {
+      setActiveDocument(null, null);
+    }
+
     if (data.activeDocumentId && !activeDocumentName) {
       setActiveDocument(data.activeDocumentId, "document");
     }

@@ -120,7 +120,7 @@ public class DeskApiController {
                     .body(
                             new ApiError(
                                     "Document upload failed. Restart Spring (8080), the API"
-                                            + " (8090), and Qwen (8092), then try again."));
+                                            + " (8090), and the document service (8092), then try again."));
         }
     }
 
@@ -156,7 +156,7 @@ public class DeskApiController {
                 // fall through
             }
         }
-        return "Upload failed. Ensure Qwen is running on port 8092 and the API on 8090.";
+        return "Upload failed. Ensure the document service is running on port 8092 and the API on 8090.";
     }
 
     private String extractUploadError(RestClientException ex) {
@@ -171,9 +171,9 @@ public class DeskApiController {
             return "Cannot reach the document API on port 8090. Start the Rust API (run-api).";
         }
         if (msg.contains("timed out") || msg.contains("Timeout")) {
-            return "Upload timed out. Try a smaller file or ensure Qwen is running on port 8092.";
+            return "Upload timed out. Try a smaller file or ensure the document service is running on port 8092.";
         }
-        return "Upload failed. Ensure Qwen is running on port 8092 and the API on 8090.";
+        return "Upload failed. Ensure the document service is running on port 8092 and the API on 8090.";
     }
 
     @GetMapping("/documents/{id}/download")

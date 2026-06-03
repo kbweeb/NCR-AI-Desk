@@ -221,7 +221,7 @@ switch ($Action) {
         Stop-DeskPorts
         Start-Sleep -Seconds 1
         if (-not $env:PERPLEXITY_API_KEY) {
-            Write-Host "WARNING: PERPLEXITY_API_KEY not set — add it to .env for live chat (weather, news)."
+            Write-Host "WARNING: PERPLEXITY_API_KEY not set - add it to .env for live chat (weather, news)."
             Write-Host "  Get a key: https://www.perplexity.ai/settings/api"
         }
         Start-DeskDocsWindow

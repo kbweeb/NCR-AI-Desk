@@ -1,4 +1,4 @@
-use crate::documents::{self, DocumentArtifact};
+use crate::documents::{self, truncate_utf8_prefix, DocumentArtifact};
 use crate::kb::{entries, KbEntry};
 use crate::llm;
 use crate::nlp::{
@@ -94,7 +94,11 @@ pub fn score_entry(
 }
 
 /// Qdrant vector search when configured; otherwise lexical KB search.
-pub async fn search_kb(message: &str, intent: &str, limit: usize) -> (Vec<(KbEntry, f32)>, &'static str) {
+pub async fn search_kb(
+    message: &str,
+    intent: &str,
+    limit: usize,
+) -> (Vec<(KbEntry, f32)>, &'static str) {
     if qdrant_rag::is_configured() && qdrant_rag::is_ready().await {
         match qdrant_rag::search(message, limit).await {
             Ok(hits) if !hits.is_empty() => return (hits, "rag"),
@@ -138,9 +142,7 @@ fn follow_ups_for_intent(intent: &str) -> Vec<String> {
             "Where do I file a physical report?".into(),
             "Mailroom location".into(),
         ],
-        "escalation" => vec![
-            "How do I submit a complaint electronically?".into(),
-        ],
+        "escalation" => vec!["How do I submit a complaint electronically?".into()],
         "procedure" => vec![
             "How do I request PTO?".into(),
             "How do I submit an expense report?".into(),
@@ -188,6 +190,11 @@ fn kb_fast_path_threshold() -> f32 {
         .unwrap_or(0.55)
 }
 
+fn is_provider_config_error(err: &str) -> bool {
+    err.contains("API_KEY is not set")
+        || err.contains("No AI provider is configured")
+}
+
 fn force_llm_rewrite() -> bool {
     matches!(
         std::env::var("AI_DESK_ALWAYS_LLM")
@@ -209,7 +216,7 @@ fn kb_context_for_llm(matches: &[(KbEntry, f32)]) -> String {
         .map(|(e, _)| {
             let body = e.body.replace("**", "");
             let body = if body.len() > MAX_BODY_CHARS {
-                format!("{}…", &body[..MAX_BODY_CHARS])
+                format!("{}…", truncate_utf8_prefix(&body, MAX_BODY_CHARS))
             } else {
                 body
             };
@@ -319,8 +326,7 @@ async fn answer_with_document(ctx: &AskContext<'_>) -> AskResponse {
 
     let Some(doc) = documents::get_for_session(doc_id, session_id) else {
         return AskResponse {
-            reply: "I don't have that document in this session. Attach it again."
-                .into(),
+            reply: "I don't have that document in this session. Attach it again.".into(),
             intent: "document".into(),
             confidence: 0.5,
             engine: "local".into(),
@@ -395,7 +401,7 @@ async fn answer_with_document(ctx: &AskContext<'_>) -> AskResponse {
             }
             Err(err) => finish_response(
                 AskResponse {
-                    reply: if err.contains("PERPLEXITY_API_KEY") {
+                    reply: if is_provider_config_error(&err) {
                         err
                     } else {
                         format!("I couldn't edit the document: {err}")
@@ -432,7 +438,7 @@ async fn answer_with_document(ctx: &AskContext<'_>) -> AskResponse {
             ),
             Err(err) => finish_response(
                 AskResponse {
-                    reply: if err.contains("PERPLEXITY_API_KEY") {
+                    reply: if is_provider_config_error(&err) {
                         err
                     } else {
                         format!("I couldn't analyze the document: {err}")
@@ -463,7 +469,26 @@ pub async fn answer(ctx: AskContext<'_>) -> AskResponse {
     let history = session::merge_history(ctx.session_id, ctx.history);
     let history_text = session::format_history_for_llm(&history);
 
-    if trimmed.is_empty() || is_small_talk_greeting(trimmed) {
+    if trimmed.is_empty() {
+        return finish_response(
+            AskResponse {
+                reply: "Ask a work question — for example, a department phone number or where to file a report."
+                    .into(),
+                intent: "empty".into(),
+                confidence: 1.0,
+                engine: "local".into(),
+                sources: vec![],
+                suggested_follow_ups: follow_ups_for_intent("general"),
+                document_artifact: None,
+                active_document_id: None,
+                document_edit_preview: None,
+            },
+            &ctx,
+            trimmed,
+        );
+    }
+
+    if is_small_talk_greeting(trimmed) {
         return finish_response(greeting_response(), &ctx, trimmed);
     }
 

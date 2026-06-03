@@ -25,3 +25,10 @@ mcps/
 
 # Ephemeral agent upgrade workspace (if recreated locally)
 .github/java-upgrade/
+
+# Other local projects (not part of AI Desk)
+it-software-service/
+aidesk/
+
+# Archives too large for GitHub
+*.zip

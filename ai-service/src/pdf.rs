@@ -27,7 +27,10 @@ pub struct ExportedDocument {
     pub mime_type: String,
 }
 
-pub async fn extract_document_bytes(data: &[u8], filename: &str) -> Result<ExtractedDocument, String> {
+pub async fn extract_document_bytes(
+    data: &[u8],
+    filename: &str,
+) -> Result<ExtractedDocument, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(90))
         .build()
@@ -210,15 +213,4 @@ fn guess_mime(filename: &str) -> &'static str {
         return "text/csv";
     }
     "application/octet-stream"
-}
-
-// Legacy names
-pub async fn extract_pdf_bytes(data: &[u8], filename: &str) -> Result<ExtractedDocument, String> {
-    extract_document_bytes(data, filename).await
-}
-
-pub async fn generate_pdf_bytes(title: &str, body: &str, filename: &str) -> Result<Vec<u8>, String> {
-    Ok(export_document_bytes(title, body, filename, "pdf")
-        .await?
-        .bytes)
 }

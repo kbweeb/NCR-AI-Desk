@@ -1,19 +1,21 @@
 mod chat;
+mod doc_service;
 mod documents;
 mod embeddings;
+mod gemini;
+mod groq;
 mod kb;
 mod llm;
 mod nlp;
 mod pdf;
-mod qdrant_rag;
-mod doc_service;
 mod perplexity;
+mod qdrant_rag;
 mod session;
 
-use documents::MAX_UPLOAD_BYTES;
 use actix_multipart::Multipart;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use chat::AskContext;
+use documents::MAX_UPLOAD_BYTES;
 use futures_util::{future, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use session::ChatTurn;
@@ -73,7 +75,7 @@ async fn health() -> impl Responder {
         llm: LlmHealth {
             mode: llm::use_llm_mode(),
             live_available,
-            live_model: perplexity::model(),
+            live_model: llm::configured_models(),
             document_service_available: doc_available,
             document_service_url: doc_service::base_url(),
         },
@@ -159,7 +161,10 @@ async fn upload_document(mut payload: Multipart) -> impl Responder {
     }
 }
 
-async fn download_document(path: web::Path<String>, query: web::Query<DownloadQuery>) -> impl Responder {
+async fn download_document(
+    path: web::Path<String>,
+    query: web::Query<DownloadQuery>,
+) -> impl Responder {
     let document_id = path.into_inner();
     let session_id = query.session_id.as_deref().unwrap_or("");
     match documents::read_latest_export(&document_id, session_id) {
@@ -189,9 +194,9 @@ async fn main() -> std::io::Result<()> {
 
     println!("NCR Tech Solutions AI Desk API listening on http://{bind}/");
     if live_on {
-        println!("  LLM: Perplexity Sonar ({})", perplexity::model());
+        println!("  LLM: {}", llm::configured_models());
     } else {
-        println!("  LLM: offline — set PERPLEXITY_API_KEY in .env for live answers");
+        println!("  LLM: offline - set GROQ_API_KEY or GEMINI_API_KEY in .env for AI answers");
     }
     if doc_on {
         println!("  Documents: {}", doc_service::base_url());
@@ -223,7 +228,9 @@ async fn main() -> std::io::Result<()> {
         println!("  RAG: set QDRANT_URL + QDRANT_API_KEY in .env for vector search");
     }
 
-    println!("  Documents: PDF/Word upload, Q&A, edit, export (document service :8092 + Perplexity)");
+    println!(
+        "  Documents: PDF/Word upload, Q&A, edit, export (document service :8092 + AI provider)"
+    );
     println!("  Frontend: Spring Boot http://127.0.0.1:8080/");
 
     let payload_limit = MAX_UPLOAD_BYTES + (512 * 1024);

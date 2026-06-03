@@ -1,13 +1,14 @@
-//! LLM: Perplexity Sonar (live web) + optional KB context from Qdrant.
+//! LLM provider fallback: Groq, Gemini, then optional Perplexity.
 
-use crate::perplexity;
+use crate::{gemini, groq, perplexity};
 
-const LIVE_WEB_RULES: &str = "\nYou can use current web information for weather, news, sports scores, \
-     market data, and other real-time facts. Cite approximate dates when relevant. \
-     For internal NCR directory facts (rooms, extensions), prefer the knowledge snippets provided; \
-     do not invent NCR phone numbers or room codes.";
+const PROVIDER_RULES: &str =
+    "\nUse provided NCR knowledge snippets for internal directory facts. \
+     If external or current facts are needed and no web-capable provider/tool is available, \
+     say what you can answer from general knowledge and what should be verified. \
+     Do not invent NCR phone numbers, room codes, or policies.";
 
-/// `auto` (default): use Perplexity when API key is set. `on`: require it. `off`: KB-only.
+/// `auto` (default): use any configured provider. `on`: require one. `off`: KB-only.
 pub fn use_llm_mode() -> String {
     std::env::var("AI_DESK_USE_LLM")
         .unwrap_or_else(|_| "auto".into())
@@ -23,32 +24,34 @@ pub fn llm_explicitly_on() -> bool {
 }
 
 fn assistant_max_tokens() -> u32 {
-    std::env::var("PERPLEXITY_ASSISTANT_MAX_TOKENS")
+    std::env::var("AI_DESK_ASSISTANT_MAX_TOKENS")
+        .or_else(|_| std::env::var("PERPLEXITY_ASSISTANT_MAX_TOKENS"))
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1024)
 }
 
 fn document_max_tokens() -> u32 {
-    std::env::var("PERPLEXITY_DOCUMENT_MAX_TOKENS")
+    std::env::var("AI_DESK_DOCUMENT_MAX_TOKENS")
+        .or_else(|_| std::env::var("PERPLEXITY_DOCUMENT_MAX_TOKENS"))
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(4096)
 }
 
 fn directory_max_tokens() -> u32 {
-    std::env::var("PERPLEXITY_DIRECTORY_MAX_TOKENS")
+    std::env::var("AI_DESK_DIRECTORY_MAX_TOKENS")
+        .or_else(|_| std::env::var("PERPLEXITY_DIRECTORY_MAX_TOKENS"))
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(512)
 }
 
 pub async fn document_llm_unavailable_message() -> String {
-    if perplexity::is_configured().await {
+    if any_provider_configured().await {
         "Document analysis is temporarily unavailable. Please try again.".into()
     } else {
-        "To ask questions about PDF or Word files, add PERPLEXITY_API_KEY to .env \
-         (https://www.perplexity.ai/settings/api), then restart the desk."
+        "To ask questions about PDF or Word files, add GROQ_API_KEY or GEMINI_API_KEY to .env, then restart the desk."
             .into()
     }
 }
@@ -57,7 +60,90 @@ pub async fn live_llm_available() -> bool {
     if llm_explicitly_off() {
         return false;
     }
-    perplexity::is_configured().await
+    any_provider_configured().await
+}
+
+async fn any_provider_configured() -> bool {
+    groq::is_configured().await || gemini::is_configured().await || perplexity::is_configured().await
+}
+
+pub fn configured_models() -> String {
+    let mut models = Vec::new();
+    if groq::api_key().is_some() {
+        models.push(format!("groq:{}", groq::model()));
+    }
+    if gemini::api_key().is_some() {
+        models.push(format!("gemini:{}", gemini::model()));
+    }
+    if perplexity::api_key().is_some() {
+        models.push(format!("perplexity:{}", perplexity::model()));
+    }
+    if models.is_empty() {
+        "none".to_string()
+    } else {
+        models.join(", ")
+    }
+}
+
+fn provider_order() -> Vec<String> {
+    std::env::var("AI_DESK_LLM_PROVIDERS")
+        .unwrap_or_else(|_| "groq,gemini,perplexity".to_string())
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+async fn complete_from_providers(
+    system: &str,
+    user: &str,
+    max_new_tokens: Option<u32>,
+    documents: bool,
+) -> Result<(String, &'static str), String> {
+    let mut errors = Vec::new();
+    for provider in provider_order() {
+        match provider.as_str() {
+            "groq" if groq::api_key().is_some() => {
+                let result = if documents {
+                    groq::complete_for_documents(system, user, max_new_tokens).await
+                } else {
+                    groq::complete(system, user, max_new_tokens).await
+                };
+                match result {
+                    Ok(reply) => return Ok((reply, "groq")),
+                    Err(err) => errors.push(err),
+                }
+            }
+            "gemini" if gemini::api_key().is_some() => {
+                let result = if documents {
+                    gemini::complete_for_documents(system, user, max_new_tokens).await
+                } else {
+                    gemini::complete(system, user, max_new_tokens).await
+                };
+                match result {
+                    Ok(reply) => return Ok((reply, "gemini")),
+                    Err(err) => errors.push(err),
+                }
+            }
+            "perplexity" if perplexity::api_key().is_some() => {
+                let result = if documents {
+                    perplexity::complete_for_documents(system, user, max_new_tokens).await
+                } else {
+                    perplexity::complete(system, user, max_new_tokens).await
+                };
+                match result {
+                    Ok(reply) => return Ok((reply, "perplexity")),
+                    Err(err) => errors.push(err),
+                }
+            }
+            _ => {}
+        }
+    }
+    if errors.is_empty() {
+        Err("No AI provider is configured. Add GROQ_API_KEY or GEMINI_API_KEY to .env.".into())
+    } else {
+        Err(errors.join(" | "))
+    }
 }
 
 pub fn system_prompt() -> String {
@@ -71,7 +157,7 @@ pub fn system_prompt() -> String {
            and suggest People Operations, IT Service Desk, or their manager — do NOT invent \
            internal phone numbers, rooms, or policies.\n\
          - Keep answers concise unless listing steps.\n\
-         - Use **bold** for key names, numbers, and room codes when helpful.{LIVE_WEB_RULES}"
+         - Use **bold** for key names, numbers, and room codes when helpful.{PROVIDER_RULES}"
     )
 }
 
@@ -84,7 +170,7 @@ pub fn assistant_system_prompt() -> String {
          - Be practical, clear, and professional (NCR: retail, banking, hospitality technology).\n\
          - Do NOT invent NCR phone numbers, room codes, or policies.\n\
          - Do not claim you sent email or accessed internal systems — you provide text and guidance only.\n\
-         - Use **bold** sparingly; bullet lists when helpful.{LIVE_WEB_RULES}"
+         - Use **bold** sparingly; bullet lists when helpful.{PROVIDER_RULES}"
     )
 }
 
@@ -95,7 +181,7 @@ pub fn casual_redirect_system_prompt() -> String {
          Rules:\n\
          - Reply in 2–4 short sentences.\n\
          - If harmless, answer briefly; decline unsafe or inappropriate requests.\n\
-         - End by inviting a work question (directory, documents, drafting, IT).{LIVE_WEB_RULES}"
+         - End by inviting a work question (directory, documents, drafting, IT).{PROVIDER_RULES}"
     )
 }
 
@@ -139,13 +225,13 @@ pub async fn complete_assistant(
              Employee request:\n{user_message}"
         )
     };
-    let reply = perplexity::complete(
+    complete_from_providers(
         &assistant_system_prompt(),
         &user_content,
         Some(assistant_max_tokens()),
+        false,
     )
-    .await?;
-    Ok((reply, "perplexity"))
+    .await
 }
 
 pub async fn complete_casual_redirect(
@@ -158,13 +244,13 @@ pub async fn complete_casual_redirect(
         format!("Recent conversation:\n{chat_history}\n\n")
     };
     let user_content = format!("{history_block}Employee message:\n{user_message}");
-    let reply = perplexity::complete(
+    complete_from_providers(
         &casual_redirect_system_prompt(),
         &user_content,
         Some(assistant_max_tokens()),
+        false,
     )
-    .await?;
-    Ok((reply, "perplexity"))
+    .await
 }
 
 pub async fn complete_document_chat(
@@ -183,16 +269,15 @@ pub async fn complete_document_chat(
     } else {
         format!("Optional NCR reference:\n---\n{kb_context}\n---\n\n")
     };
-    let user_content = format!(
-        "{history_block}{kb_block}{document_context}\n\nEmployee message:\n{user_message}"
-    );
-    let reply = perplexity::complete_for_documents(
+    let user_content =
+        format!("{history_block}{kb_block}{document_context}\n\nEmployee message:\n{user_message}");
+    complete_from_providers(
         &document_assistant_system_prompt(),
         &user_content,
         Some(document_max_tokens()),
+        true,
     )
-    .await?;
-    Ok((reply, "perplexity"))
+    .await
 }
 
 pub async fn complete_document_edit(
@@ -203,17 +288,20 @@ pub async fn complete_document_edit(
         "Current document:\n---\n{document_text}\n---\n\nInstructions:\n{instructions}\n\n\
          Output the complete revised document:"
     );
-    let reply = perplexity::complete_for_documents(
+    complete_from_providers(
         &document_edit_system_prompt(),
         &user_content,
         Some(document_max_tokens()),
+        true,
     )
-    .await?;
-    Ok((reply, "perplexity"))
+    .await
 }
 
 /// Directory / KB-backed questions with live web when needed.
-pub async fn complete(user_message: &str, kb_context: &str) -> Result<(String, &'static str), String> {
+pub async fn complete(
+    user_message: &str,
+    kb_context: &str,
+) -> Result<(String, &'static str), String> {
     let user_content = if kb_context.trim().is_empty() {
         format!("Employee question:\n{user_message}")
     } else {
@@ -222,13 +310,13 @@ pub async fn complete(user_message: &str, kb_context: &str) -> Result<(String, &
              Employee question:\n{user_message}"
         )
     };
-    let reply = perplexity::complete(
+    complete_from_providers(
         &system_prompt(),
         &user_content,
         Some(directory_max_tokens()),
+        false,
     )
-    .await?;
-    Ok((reply, "perplexity"))
+    .await
 }
 
 pub async fn should_answer_with_llm() -> bool {
@@ -236,7 +324,7 @@ pub async fn should_answer_with_llm() -> bool {
         return false;
     }
     if llm_explicitly_on() {
-        return perplexity::is_configured().await;
+        return any_provider_configured().await;
     }
-    perplexity::is_configured().await
+    any_provider_configured().await
 }

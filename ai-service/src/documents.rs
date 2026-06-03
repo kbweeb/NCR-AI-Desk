@@ -1,7 +1,7 @@
 //! Uploaded documents and generated revisions.
 
-use crate::pdf::{self, infer_format};
 use crate::doc_service;
+use crate::pdf::{self, infer_format};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -13,18 +13,35 @@ const MAX_DOC_CHARS: usize = 48_000;
 const MAX_LLM_DOC_CONTEXT: usize = 32_000;
 const CHAT_PREVIEW_CHARS: usize = 6_000;
 
+/// Prefix of `s` with at most `max_bytes` UTF-8 bytes (never splits a character).
+pub fn truncate_utf8_prefix(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 const ALLOWED_EXT: &[&str] = &[
-    ".pdf", ".docx", ".txt", ".md", ".markdown", ".rtf", ".csv", ".log",
+    ".pdf",
+    ".docx",
+    ".txt",
+    ".md",
+    ".markdown",
+    ".rtf",
+    ".csv",
+    ".log",
 ];
 
 #[derive(Clone)]
 pub struct DocumentRecord {
-    pub id: String,
     pub session_id: String,
     pub filename: String,
     pub format: String,
     pub page_count: u32,
-    pub extracted_text: String,
     pub current_text: String,
     pub latest_export_path: Option<PathBuf>,
     pub latest_export_filename: Option<String>,
@@ -82,7 +99,7 @@ pub fn truncate_for_context(text: &str) -> String {
     }
     format!(
         "{}\n\n[Document truncated at {} characters — ask about a specific section if needed.]",
-        &t[..MAX_LLM_DOC_CONTEXT],
+        truncate_utf8_prefix(t, MAX_LLM_DOC_CONTEXT),
         MAX_LLM_DOC_CONTEXT
     )
 }
@@ -106,7 +123,7 @@ pub fn chat_preview(text: &str) -> String {
     if t.len() <= CHAT_PREVIEW_CHARS {
         return t.to_string();
     }
-    format!("{}…", &t[..CHAT_PREVIEW_CHARS])
+    format!("{}…", truncate_utf8_prefix(t, CHAT_PREVIEW_CHARS))
 }
 
 pub async fn upload_document(
@@ -128,11 +145,9 @@ pub async fn upload_document(
     }
 
     if !doc_service::is_available().await {
-        return Err(
-            "Document upload needs the document service on port 8092. \
+        return Err("Document upload needs the document service on port 8092. \
              Start it with start.cmd (or start-docs.cmd)."
-                .into(),
-        );
+            .into());
     }
 
     let extracted = pdf::extract_document_bytes(bytes, filename).await?;
@@ -140,19 +155,17 @@ pub async fn upload_document(
     if text.len() > MAX_DOC_CHARS {
         text = format!(
             "{}\n\n[Truncated at {} characters for processing.]",
-            &text[..MAX_DOC_CHARS],
+            truncate_utf8_prefix(&text, MAX_DOC_CHARS),
             MAX_DOC_CHARS
         );
     }
 
     let id = Uuid::new_v4().to_string();
     let record = DocumentRecord {
-        id: id.clone(),
         session_id: session_id.to_string(),
         filename: filename.to_string(),
         format: extracted.format.clone(),
         page_count: extracted.page_count,
-        extracted_text: text.clone(),
         current_text: text.clone(),
         latest_export_path: None,
         latest_export_filename: None,
@@ -162,7 +175,10 @@ pub async fn upload_document(
 
     {
         let mut guard = store();
-        guard.as_mut().expect("documents map").insert(id.clone(), record);
+        guard
+            .as_mut()
+            .expect("documents map")
+            .insert(id.clone(), record);
     }
 
     Ok(UploadResponse {
@@ -176,9 +192,7 @@ pub async fn upload_document(
 
 pub fn get(document_id: &str) -> Option<DocumentRecord> {
     let guard = store();
-    guard
-        .as_ref()
-        .and_then(|m| m.get(document_id).cloned())
+    guard.as_ref().and_then(|m| m.get(document_id).cloned())
 }
 
 pub fn get_for_session(document_id: &str, session_id: &str) -> Option<DocumentRecord> {
@@ -253,9 +267,6 @@ pub async fn apply_edit(
 
     let preview = chat_preview(body);
     let revision;
-    let filename;
-    let mime_type;
-    let path;
 
     {
         let mut guard = store();
@@ -279,9 +290,9 @@ pub async fn apply_edit(
     )
     .await?;
 
-    filename = exported.filename.clone();
-    mime_type = exported.mime_type.clone();
-    path = data_dir().join(format!("{document_id}-rev{revision}-{}", exported.filename));
+    let filename = exported.filename.clone();
+    let mime_type = exported.mime_type.clone();
+    let path = data_dir().join(format!("{document_id}-rev{revision}-{}", exported.filename));
 
     std::fs::write(&path, &exported.bytes).map_err(|e| e.to_string())?;
 
@@ -306,7 +317,10 @@ pub async fn apply_edit(
     Ok((artifact, preview))
 }
 
-pub fn read_latest_export(document_id: &str, session_id: &str) -> Result<(Vec<u8>, String, String), String> {
+pub fn read_latest_export(
+    document_id: &str,
+    session_id: &str,
+) -> Result<(Vec<u8>, String, String), String> {
     let doc = get_for_session(document_id, session_id)
         .ok_or_else(|| "Document not found.".to_string())?;
     let path = doc
@@ -325,6 +339,15 @@ pub fn read_latest_export(document_id: &str, session_id: &str) -> Result<(Vec<u8
     Ok((bytes, name, mime))
 }
 
-pub fn document_context(doc: &DocumentRecord) -> String {
-    document_context_for_llm(doc)
+#[cfg(test)]
+mod tests {
+    use super::truncate_utf8_prefix;
+
+    #[test]
+    fn truncate_utf8_does_not_split_multibyte_char() {
+        let text = "é".repeat(20); // 2 bytes per char
+        let truncated = truncate_utf8_prefix(&text, 25);
+        assert!(truncated.is_char_boundary(truncated.len()));
+        assert!(truncated.len() <= 25);
+    }
 }

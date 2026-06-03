@@ -25,7 +25,7 @@ Internal workplace assistant for NCR employees: **directory and policy answers**
 |-------|------|------------|------|
 | **Web UI** | 8080 | Spring Boot + static HTML/JS | Browser UI; proxies `/api/*` to Rust |
 | **API** | 8090 | Rust (Actix Web) | Routing, KB, sessions, documents, RAG, LLM orchestration |
-| **Inference** | 8092 | Python (FastAPI + Qwen) | Chat, embeddings, file extract/export |
+| **Inference** | 8092 | Python (FastAPI) | Embeddings, PDF/Word extract/export |
 
 ```text
 Browser → Spring :8080 → Rust :8090 → Python :8092 (chat / documents / embed)
@@ -47,7 +47,7 @@ Browser → Spring :8080 → Rust :8090 → Python :8092 (chat / documents / emb
 git clone https://github.com/kbweeb/NCR-AI-Desk.git
 cd NCR-AI-Desk
 copy .env.example .env
-# Edit .env — set PERPLEXITY_API_KEY (required for chat)
+# Edit .env — set GROQ_API_KEY or GEMINI_API_KEY (required for AI chat)
 # Optional: QDRANT_URL and QDRANT_API_KEY for directory RAG
 ```
 
